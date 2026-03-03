@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd C:\\\\Users\\\\joesa\\\\OneDrive\\\\Documents\\\\law-school-python\\\\open-law-outliner:*)"
+    ]
+  }
+}
