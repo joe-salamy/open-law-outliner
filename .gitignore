@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 *.py[cod]
 *$py.class
+input_text.txt
 output_text.txt
 scratchpad.md
