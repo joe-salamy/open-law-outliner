@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cd C:\\\\Users\\\\joesa\\\\OneDrive\\\\Documents\\\\law-school-python\\\\open-law-outliner:*)",
-      "Bash(cd /c/Users/joesa/OneDrive/Documents/law-school-python/open-law-outliner && git stash pop 2>&1)",
-      "Bash(cd /c/Users/joesa/OneDrive/Documents/law-school-python/open-law-outliner && git stash apply stash@{1} 2>&1)"
-    ]
-  }
-}
