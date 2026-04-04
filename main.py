@@ -313,7 +313,8 @@ def capitalize_first_word(text):
 
 def delete_periods(text):
     """
-    Delete periods if they are the last non-space character in a line.
+    Delete periods if they are the last non-space character in a line,
+    or if a line ends with ." (period before closing quote).
     """
     lines = text.split("\n")
     result_lines = []
@@ -322,8 +323,11 @@ def delete_periods(text):
         # Find the last non-space character
         stripped = line.rstrip()
         if stripped and stripped[-1] == ".":
-            # Remove the period
+            # Remove the trailing period
             line = stripped[:-1] + line[len(stripped) :]
+        elif stripped and stripped.endswith('."'):
+            # Remove the period before closing quote
+            line = stripped[:-2] + '"' + line[len(stripped) :]
         result_lines.append(line)
 
     return "\n".join(result_lines)
