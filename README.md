@@ -91,17 +91,18 @@ python main.py --input notes.txt --output outline.txt
 
 ## Adding custom abbreviations
 
-All replacements live in the `REPLACEMENTS` list near the top of `main.py`. Each entry is a `(old, new)` tuple and they are applied in order. To add your own:
+All replacements live in the tables near the top of `main.py`. Matching is case-insensitive, whole-phrase, and longest-match-first, so one entry covers both cases. Add yours to the relevant list:
 
 ```python
-REPLACEMENTS = [
-    # Legal terms
-    ("Plaintiffs", "P's"),
-    # Add your own anywhere in the relevant section:
-    ("Promissory estoppel", "PE"),
-    ("promissory estoppel", "PE"),
-    ...
+_FIXED = [
+    ("promissory estoppel", "PE"),  # used verbatim
+]
+_CASED = [
+    ("tortfeasor", "tf"),  # first letter follows the match: Tortfeasor -> Tf
+]
+_DELETIONS = [
+    "hereinafter",  # removed entirely
 ]
 ```
 
-No other changes needed.
+Amendments, numbers, ordinals, and `not`/`have` contractions are generated from small loops — extend the word lists, not the tables. No other changes needed.

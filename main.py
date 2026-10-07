@@ -1,415 +1,253 @@
+"""Compress verbose law school notes into compact outline form."""
+
 import argparse
+import re
 
 # ---------------------------------------------------------------------------
-# Replacement pairs, applied in order. Add your own abbreviations here.
+# Phrase tables. Keys are lowercase; matching is case-insensitive,
+# whole-phrase (so "Indiana" never mangles "Indianapolis"), and
+# longest-match-first (so "West Virginia" wins over "Virginia").
+#
+# _FIXED: replacement used verbatim (acronyms, symbols, digits).
+# _CASED: replacement's first letter follows the match, so one entry covers
+#         both cases ("because" -> "bc", "Because" -> "Bc").
+# _DELETIONS: phrases removed entirely.
+# Add your own abbreviations to the relevant list; nothing else to change.
 # ---------------------------------------------------------------------------
-REPLACEMENTS = [
-    # Legal terms ===========================================================
-    ("Plaintiffs", "P's"),
-    ("plaintiffs", "P's"),
-    ("Plaintiff's", "P's"),
-    ("plaintiff's", "P's"),
-    ("Plaintiff", "P"),
-    ("plaintiff", "P"),
-    ("Defendant's", "D's"),
-    ("defendant's", "D's"),
-    ("Defendants", "D's"),
-    ("defendants", "D's"),
-    ("Defendant", "D"),
-    ("defendant", "D"),
-    ("Hypothetical ", "Hypo "),
-    ("*Hypothetical*", "*Hypo*"),
-    ("Hypothetical:", "Hypo:"),
-    ("hypothetical ", "hypo "),
-    ("*hypothetical*", "*hypo*"),
-    ("hypothetical:", "hypo:"),
-    ("Personal jurisdiction", "PJ"),
+
+_FIXED = [
+    # Legal terms
     ("personal jurisdiction", "PJ"),
-    ("Subject matter jurisdiction", "SMJ"),
     ("subject matter jurisdiction", "SMJ"),
-    ("Jurisdiction", "Jdx"),
-    ("jurisdiction", "jdx"),
-    ("Jurisdictions", "Jdx's"),
-    ("jurisdictions", "jdx's"),
-    ("Jdxal", "Jurisdictional"),
-    ("jdxal", "jurisdictional"),
-    ("Summary judgment", "SJ"),
     ("summary judgment", "SJ"),
-    ("Supreme Court", "SCOTUS"),
-    ("Section ", "§ "),
-    ("section ", "§ "),
-    ("1st Amendment", "1A"),
-    ("First Amendment", "1A"),
-    ("2nd Amendment", "2A"),
-    ("Second Amendment", "2A"),
-    ("3rd Amendment", "3A"),
-    ("Third Amendment", "3A"),
-    ("4th Amendment", "4A"),
-    ("Fourth Amendment", "4A"),
-    ("5th Amendment", "5A"),
-    ("Fifth Amendment", "5A"),
-    ("6th Amendment", "6A"),
-    ("Sixth Amendment", "6A"),
-    ("7th Amendment", "7A"),
-    ("Seventh Amendment", "7A"),
-    ("8th Amendment", "8A"),
-    ("Eighth Amendment", "8A"),
-    ("9th Amendment", "9A"),
-    ("Ninth Amendment", "9A"),
-    ("10th Amendment", "10A"),
-    ("Tenth Amendment", "10A"),
-    ("11th Amendment", "11A"),
-    ("Eleventh Amendment", "11A"),
-    ("12th Amendment", "12A"),
-    ("Twelfth Amendment", "12A"),
-    ("13th Amendment", "13A"),
-    ("Thirteenth Amendment", "13A"),
-    ("14th Amendment", "14A"),
-    ("Fourteenth Amendment", "14A"),
-    ("15th Amendment", "15A"),
-    ("Fifteenth Amendment", "15A"),
-    ("16th Amendment", "16A"),
-    ("Sixteenth Amendment", "16A"),
-    ("17th Amendment", "17A"),
-    ("Seventeenth Amendment", "17A"),
-    ("18th Amendment", "18A"),
-    ("Eighteenth Amendment", "18A"),
-    ("19th Amendment", "19A"),
-    ("Nineteenth Amendment", "19A"),
-    ("Due process", "DP"),
+    ("supreme court", "SCOTUS"),
+    ("section", "§"),
     ("due process", "DP"),
-    ("Default judgment", "DJ"),
     ("default judgment", "DJ"),
-    ("Corporation", "Corp"),
-    ("corporation", "corp"),
-    ("Constitutional", "Const"),
-    ("constitutional", "const"),
-    ("Constitution", "Const"),
-    ("constitution", "const"),
-    ("constity", "constitutionality"),
-    ("Articles of Confederation", "AoC"),
-    ("Administration", "Admin"),
-    ("administration", "admin"),
-    ("Administrative", "Admin"),
-    ("administrative", "admin"),
-    ("President", "Pres"),
-    ("president", "pres"),
-    ("Presial", "Presidential"),
-    ("presial", "presidential"),
-    ("Secretary", "Sec"),
-    ("secretary", "sec"),
-    ("Executive", "Exec"),
-    ("executive", "exec"),
-    ("Legislative", "Legis"),
-    ("legislative", "legis"),
-    ("Judicial", "Judic"),
-    ("judicial", "judic"),
-    ("Legislature", "Legis"),
-    ("legislature", "legis"),
-    ("Landlords", "LL's"),
-    ("landlords", "LL's"),
-    ("Landlord's", "LL's"),
-    ("landlord's", "LL's"),
-    ("Landlord", "LL"),
-    ("landlord", "LL"),
-    ("Tenants", "T's"),
-    ("tenants", "T's"),
-    ("Tenant's", "T's"),
-    ("tenant's", "T's"),
-    ("Tenant", "T"),
-    ("tenant", "T"),
-    ("Contract ", "K "),
-    ("contract ", "k "),
-    (" Federal ", " Fed "),
-    (" federal ", " fed "),
-    (" Citizenship ", " C-ship "),
-    (" citizenship ", " c-ship "),
-    (" Argument ", " Arg "),
-    (" argument ", " arg "),
-    ("Adverse possession", "AP"),
+    ("articles of confederation", "AoC"),
     ("adverse possession", "AP"),
-    ("Intellectual Property", "IP"),
-    ("Intellectual property", "IP"),
     ("intellectual property", "IP"),
-    # States ================================================================
-    ("United States", "US"),
-    ("Alabama", "AL"),
-    ("Alaska", "AK"),
-    ("Arizona", "AZ"),
-    ("Arkansas", "AR"),
-    ("California", "CA"),
-    ("Colorado", "CO"),
-    ("Connecticut", "CT"),
-    ("Delaware", "DE"),
-    ("Florida", "FL"),
-    ("Georgia", "GA"),
-    ("Hawaii", "HI"),
-    ("Idaho", "ID"),
-    ("Illinois", "IL"),
-    ("Indiana", "IN"),
-    ("Iowa", "IA"),
-    ("Kansas", "KS"),
-    ("Kentucky", "KY"),
-    ("Louisiana", "LA"),
-    ("Maine", "ME"),
-    ("Maryland", "MD"),
-    ("Massachusetts", "MA"),
-    ("Michigan", "MI"),
-    ("Minnesota", "MN"),
-    ("Mississippi", "MS"),
-    ("Missouri", "MO"),
-    ("Montana", "MT"),
-    ("Nebraska", "NE"),
-    ("Nevada", "NV"),
-    ("New Hampshire", "NH"),
-    ("New Jersey", "NJ"),
-    ("New Mexico", "NM"),
-    ("New York", "NY"),
-    ("North Carolina", "NC"),
-    ("North Dakota", "ND"),
-    ("Ohio", "OH"),
-    ("Oklahoma", "OK"),
-    ("Oregon", "OR"),
-    ("Pennsylvania", "PA"),
-    ("Rhode Island", "RI"),
-    ("South Carolina", "SC"),
-    ("South Dakota", "SD"),
-    ("Tennessee", "TN"),
-    ("Texas", "TX"),
-    ("Utah", "UT"),
-    ("Vermont", "VT"),
-    ("Virginia", "VA"),
-    ("Washington", "WA"),
-    ("West Virginia", "WV"),
-    ("Wisconsin", "WI"),
-    ("Wyoming", "WY"),
-    # Common replacements ===================================================
-    ("Because", "Bc"),
-    ("because", "bc"),
-    (" And ", " + "),
-    (" and ", " + "),
-    ("Information", "Info"),
-    ("information", "info"),
-    (" With ", " W/ "),
-    (" with ", " w/ "),
-    (" Without ", " W/o "),
-    (" without ", " w/o "),
-    ("Professor", "Prof"),
-    ("professor", "prof"),
-    ("Government", "Govt"),
-    ("government", "govt"),
-    ("Introduction", "Intro"),
-    ("introduction", "intro"),
-    ("People", "Ppl"),
-    ("people", "ppl"),
-    (r"\-\>", "→"),
-    (r"\<-", "←"),
-    ("Automatically", "Auto"),
-    ("automatically", "auto"),
-    ("Conversation", "Convo"),
-    ("conversation", "convo"),
-    ("Combination", "Combo"),
-    ("combination", "combo"),
-    ("More than ", "> "),
-    ("more than ", "> "),
-    ("Less than ", "< "),
-    ("less than ", "< "),
-    ("Technology", "Tech"),
-    ("technology", "tech"),
-    ("Apartment", "Apt"),
-    ("apartment", "apt"),
-    (" Number ", " # "),
-    (" number ", " # "),
-    (" Graduate ", " Grad "),
-    (" graduate ", " grad "),
-    (" Regarding ", " Re. "),
-    (" regarding ", " re. "),
-    (" Especially ", " Esp. "),
-    (" especially ", " esp. "),
-    (" Professional ", " Prof. "),
-    (" professional ", " prof. "),
-    (" Education ", " Edu "),
-    (" education ", " edu "),
-    (" University ", " Uni "),
-    (" university ", " uni "),
-    (" Universities ", " Uni's "),
-    (" universities ", " uni's "),
-    (" Legitimate ", " Legit "),
-    (" legitimate ", " legit "),
-    # Abbreviations =========================================================
-    (" Would have ", " Would've "),
-    (" would have ", " would've "),
-    (" Should have ", " Should've "),
-    (" should have ", " should've "),
-    (" Could have ", " Could've "),
-    (" could have ", " could've "),
-    (" Might have ", " Might've "),
-    (" might have ", " might've "),
-    (" Does not ", " Doesn't "),
-    (" does not ", " doesn't "),
-    (" Do not ", " Don't "),
-    (" do not ", " don't "),
-    (" Will not ", " Won't "),
-    (" will not ", " won't "),
-    (" Could not ", " Couldn't "),
-    (" could not ", " couldn't "),
-    (" Would not ", " Wouldn't "),
-    (" would not ", " wouldn't "),
-    (" Should not ", " Shouldn't "),
-    (" should not ", " shouldn't "),
-    (" Have not ", " Haven't "),
-    (" have not ", " haven't "),
-    (" Cannot ", " Can't "),
-    (" cannot ", " can't "),
-    (" Did not ", " Didn't "),
-    (" did not ", " didn't "),
-    # Numbers ===============================================================
-    (" One ", " 1 "),
-    (" one ", " 1 "),
-    (" Two ", " 2 "),
-    (" two ", " 2 "),
-    (" Three ", " 3 "),
-    (" three ", " 3 "),
-    (" Four ", " 4 "),
-    (" four ", " 4 "),
-    (" Five ", " 5 "),
-    (" five ", " 5 "),
-    (" Six ", " 6 "),
-    (" six ", " 6 "),
-    (" Seven ", " 7 "),
-    (" seven ", " 7 "),
-    (" Eight ", " 8 "),
-    (" eight ", " 8 "),
-    (" Nine ", " 9 "),
-    (" nine ", " 9 "),
-    (" Ten ", " 10 "),
-    (" ten ", " 10 "),
-    (" First ", " 1st "),
-    (" first ", " 1st "),
-    (" Second ", " 2nd "),
-    (" second ", " 2nd "),
-    (" Third ", " 3rd "),
-    (" third ", " 3rd "),
-    (" Fourth ", " 4th "),
-    (" fourth ", " 4th "),
-    (" Fifth ", " 5th "),
-    (" fifth ", " 5th "),
-    (" Sixth ", " 6th "),
-    (" sixth ", " 6th "),
-    (" Seventh ", " 7th "),
-    (" seventh ", " 7th "),
-    (" Eighth ", " 8th "),
-    (" eighth ", " 8th "),
-    (" Ninth ", " 9th "),
-    (" ninth ", " 9th "),
-    (" Tenth ", " 10th "),
-    (" tenth ", " 10th "),
-    (" Percentage ", " % "),
-    (" percentage ", " % "),
-    (" Percent ", " % "),
-    (" percent ", " % "),
-    (",000,000", "M"),
-    (",000", "K"),
-    # Deletions =============================================================
-    (" The ", " "),
-    (" the ", " "),
-    (" a ", " "),
-    (" An ", " "),
-    (" an ", " "),
-    (" It ", " "),
-    (" it ", " "),
-    (" It's ", " "),
-    (" it's ", " "),
-    (" is ", " "),
-    (" are ", " "),
-    (" was ", " "),
-    (" were ", " "),
-    (" his ", " "),
-    (" hers ", " "),
-    (" their ", " "),
-    (" theirs ", " "),
-    ("Case Example: ", ""),
+    ("united states", "US"),
+    # States
+    ("alabama", "AL"), ("alaska", "AK"), ("arizona", "AZ"), ("arkansas", "AR"),
+    ("california", "CA"), ("colorado", "CO"), ("connecticut", "CT"), ("delaware", "DE"),
+    ("florida", "FL"), ("georgia", "GA"), ("hawaii", "HI"), ("idaho", "ID"),
+    ("illinois", "IL"), ("indiana", "IN"), ("iowa", "IA"), ("kansas", "KS"),
+    ("kentucky", "KY"), ("louisiana", "LA"), ("maine", "ME"), ("maryland", "MD"),
+    ("massachusetts", "MA"), ("michigan", "MI"), ("minnesota", "MN"), ("mississippi", "MS"),
+    ("missouri", "MO"), ("montana", "MT"), ("nebraska", "NE"), ("nevada", "NV"),
+    ("new hampshire", "NH"), ("new jersey", "NJ"), ("new mexico", "NM"), ("new york", "NY"),
+    ("north carolina", "NC"), ("north dakota", "ND"), ("ohio", "OH"), ("oklahoma", "OK"),
+    ("oregon", "OR"), ("pennsylvania", "PA"), ("rhode island", "RI"), ("south carolina", "SC"),
+    ("south dakota", "SD"), ("tennessee", "TN"), ("texas", "TX"), ("utah", "UT"),
+    ("vermont", "VT"), ("virginia", "VA"), ("washington", "WA"), ("west virginia", "WV"),
+    ("wisconsin", "WI"), ("wyoming", "WY"),
+    # Connectors and symbols
+    ("and", "+"),
+    ("more than", ">"),
+    ("less than", "<"),
+    ("number", "#"),
+    ("percentage", "%"),
+    ("percent", "%"),
 ]
+
+_CASED = [
+    # Parties
+    ("plaintiffs'", "p's"), ("plaintiff's", "p's"), ("plaintiffs", "p's"), ("plaintiff", "p"),
+    ("defendants'", "d's"), ("defendant's", "d's"), ("defendants", "d's"), ("defendant", "d"),
+    ("landlords'", "ll's"), ("landlord's", "ll's"), ("landlords", "ll's"), ("landlord", "ll"),
+    ("tenants'", "t's"), ("tenant's", "t's"), ("tenants", "t's"), ("tenant", "t"),
+    ("hypothetical", "hypo"),
+    ("jurisdictions", "jdx's"), ("jurisdiction", "jdx"),
+    ("corporation", "corp"),
+    ("constitutional", "const"), ("constitution", "const"),
+    ("administration", "admin"), ("administrative", "admin"),
+    ("president", "pres"),
+    ("secretary", "sec"),
+    ("executive", "exec"),
+    ("legislative", "legis"), ("legislature", "legis"),
+    ("judicial", "judic"),
+    ("contract", "k"),
+    ("federal", "fed"),
+    ("citizenship", "c-ship"),
+    ("argument", "arg"),
+    # Common words
+    ("information", "info"),
+    ("without", "w/o"), ("with", "w/"),
+    ("professor", "prof"),
+    ("government", "govt"),
+    ("introduction", "intro"),
+    ("people", "ppl"),
+    ("automatically", "auto"),
+    ("conversation", "convo"),
+    ("combination", "combo"),
+    ("technology", "tech"),
+    ("apartment", "apt"),
+    ("graduate", "grad"),
+    ("regarding", "re."),
+    ("especially", "esp."),
+    ("professional", "prof."),
+    ("education", "edu"),
+    ("universities", "uni's"), ("university", "uni"),
+    ("legitimate", "legit"),
+    ("because", "bc"),
+]
+
+_DELETIONS = [
+    "the", "an",
+    "it", "it's",
+    "is", "are", "was", "were",
+    "his", "hers", "their", "theirs",
+    "case example:",
+]
+
+# Lowercase-only deletions ("A" is kept so grades and labels survive).
+_EXACT_DELETIONS = ["a"]
+
+# Punctuation-free symbols: match anywhere (no word boundaries).
+_RAW = (("->", "→"), ("<-", "←"))
+# Thousands groupings: must follow a digit, must not be followed by one.
+_NUM = ((",000,000,000", "B"), (",000,000", "M"), (",000", "K"))
+
+# Generated groups ----------------------------------------------------------
+_SUFFIXES = {1: "1st", 2: "2nd", 3: "3rd"}
+
+
+def _ordinal(n):
+    return _SUFFIXES.get(n, f"{n}th")
+
+
+for _i, _word in enumerate(
+    ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"), 1
+):
+    _FIXED.append((_word, str(_i)))
+
+for _i, _word in enumerate(
+    ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"), 1
+):
+    _FIXED.append((_word, _ordinal(_i)))
+
+for _n, _word in enumerate(
+    ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+     "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth",
+     "seventeenth", "eighteenth", "nineteenth"), 1
+):
+    _code = f"{_n}A"
+    _FIXED.append((f"{_ordinal(_n)} amendment", _code))
+    _FIXED.append((f"{_word} amendment", _code))
+
+for _modal in ("would", "should", "could", "might"):
+    _CASED.append((_modal + " have", _modal + "'ve"))
+for _full, _short in (
+    ("does", "doesn't"), ("do", "don't"), ("will", "won't"),
+    ("could", "couldn't"), ("would", "wouldn't"), ("should", "shouldn't"),
+    ("have", "haven't"), ("can", "can't"), ("did", "didn't"),
+    ("cannot", "can't"),
+):
+    _CASED.append((_full + " not", _short))
+
+del _i, _word, _n, _code, _modal, _full, _short
+
+# Single compiled pattern, longest phrase first ------------------------------
+_entries = {}
+for _phrase, _repl in _FIXED:
+    _entries[_phrase] = (_repl, False)
+for _phrase, _repl in _CASED:
+    _entries[_phrase] = (_repl, True)
+for _phrase in _DELETIONS:
+    _entries[_phrase] = ("", False)
+for _phrase, _repl in _RAW + _NUM:
+    _entries[_phrase] = (_repl, False)
+
+_word_keys = [p for p in _entries if p not in dict(_RAW + _NUM)]
+_parts = [(len(p), r"(?<!\w)" + re.escape(p) + r"(?!\w)") for p in _word_keys]
+_parts += [(len(p), re.escape(p)) for p, _ in _RAW]
+_parts += [(len(p), r"(?<=\d)" + re.escape(p) + r"(?!\d)") for p, _ in _NUM]
+_parts.sort(key=lambda part: -part[0])
+_PATTERN = re.compile("|".join(alt for _, alt in _parts), re.IGNORECASE)
+_EXACT_PATTERN = re.compile("|".join(
+    r"(?<!\w)" + re.escape(p) + r"(?!\w)" for p in _EXACT_DELETIONS))
+
+del _phrase, _repl, _word_keys, _parts
+
+
+def _sub(match):
+    text = match.group(0)
+    repl, cased = _entries[text.lower()]
+    if cased and text[0].isupper():
+        return repl[0].upper() + repl[1:]
+    return repl
 
 
 def apply_replacements(text):
-    """Apply all abbreviation replacements to text."""
-    for old, new in REPLACEMENTS:
-        text = text.replace(old, new)
-    return text
+    """Apply all abbreviation replacements in a single pass."""
+    text = _PATTERN.sub(_sub, text)
+    return _EXACT_PATTERN.sub("", text)
+
+
+# Per-line cleanup ------------------------------------------------------------
+_SPACES = re.compile(r"[ \t]{2,}")
+_PERIOD_BEFORE_CLOSER = re.compile(r"\.(?=[\"'\)\]\}*_]+$)")
+
+
+def _capitalize_line(line):
+    """Uppercase the first letter, unless the line leads with a number."""
+    for i, ch in enumerate(line):
+        if ch.isalpha():
+            return line[:i] + ch.upper() + line[i + 1:]
+        if ch.isdigit():
+            return line
+    return line
+
+
+def _delete_period_line(line):
+    """Drop a terminal period, including one before closing quotes/parens."""
+    s = _PERIOD_BEFORE_CLOSER.sub("", line.rstrip())
+    return s[:-1] if s.endswith(".") else s
+
+
+def _delete_backslash_line(line):
+    """Drop a terminal backslash."""
+    s = line.rstrip()
+    return s[:-1] if s.endswith("\\") else s
+
+
+def _format_line(line):
+    indent = line[: len(line) - len(line.lstrip(" \t"))]
+    if indent == " ":
+        # Single leading space is deletion residue, not indentation.
+        indent = ""
+    body = _SPACES.sub(" ", line[len(indent):].strip())
+    body = _delete_backslash_line(_delete_period_line(_capitalize_line(body)))
+    return indent + body
+
+
+def _format_text(text):
+    return "\n".join(_format_line(line) for line in text.split("\n"))
 
 
 def capitalize_first_word(text):
-    """
-    Capitalize the first actual character on each line, skipping formatting characters like **, quotes, and whitespace.
-    Do not capitalize if the first actual character is a number.
-    """
-    lines = text.split("\n")
-    capitalized_lines = []
-
-    for line in lines:
-        # Find the first alphanumeric character
-        first_alnum_index = -1
-        for i, char in enumerate(line):
-            if char.isalnum():
-                first_alnum_index = i
-                break
-
-        if first_alnum_index != -1 and line[first_alnum_index].isdigit():
-            # Don't capitalize if first alphanumeric character is a digit
-            capitalized_lines.append(line)
-        else:
-            # Find the first alphabetic character and capitalize it
-            for i, char in enumerate(line):
-                if char.isalpha():
-                    line = line[:i] + char.upper() + line[i + 1 :]
-                    break
-            capitalized_lines.append(line)
-
-    return "\n".join(capitalized_lines)
+    """Capitalize the first letter of each line, skipping leading formatting."""
+    return "\n".join(_capitalize_line(line) for line in text.split("\n"))
 
 
 def delete_periods(text):
-    """
-    Delete periods if they are the last non-space character in a line,
-    or if a line ends with ." (period before closing quote).
-    """
-    lines = text.split("\n")
-    result_lines = []
-
-    for line in lines:
-        # Find the last non-space character
-        stripped = line.rstrip()
-        if stripped and stripped[-1] == ".":
-            # Remove the trailing period
-            line = stripped[:-1] + line[len(stripped) :]
-        elif stripped and stripped.endswith('."'):
-            # Remove the period before closing quote
-            line = stripped[:-2] + '"' + line[len(stripped) :]
-        result_lines.append(line)
-
-    return "\n".join(result_lines)
+    """Delete periods that end a line, including before closing quotes."""
+    return "\n".join(_delete_period_line(line) for line in text.split("\n"))
 
 
 def delete_trailing_backslashes(text):
-    """
-    Delete backslashes if they are the last non-space character in a line.
-    """
-    lines = text.split("\n")
-    result_lines = []
-
-    for line in lines:
-        # Find the last non-space character
-        stripped = line.rstrip()
-        if stripped and stripped[-1] == "\\":
-            # Remove the backslash
-            line = stripped[:-1] + line[len(stripped) :]
-        result_lines.append(line)
-
-    return "\n".join(result_lines)
+    """Delete backslashes that end a line."""
+    return "\n".join(_delete_backslash_line(line) for line in text.split("\n"))
 
 
-if __name__ == "__main__":
+def outline_text(text):
+    """Compress verbose notes into compact outline form."""
+    return _format_text(apply_replacements(text))
+
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Abbreviate law school notes into compact outline form."
     )
@@ -423,7 +261,7 @@ if __name__ == "__main__":
         default="output_text.txt",
         help="Output file path (default: output_text.txt)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     try:
         with open(args.input, "r", encoding="utf-8") as f:
@@ -432,12 +270,17 @@ if __name__ == "__main__":
         print(f"Error: input file '{args.input}' not found.")
         raise SystemExit(1)
 
-    output_text = apply_replacements(input_text)
-    output_text = capitalize_first_word(output_text)
-    output_text = delete_periods(output_text)
-    output_text = delete_trailing_backslashes(output_text)
+    output_text = outline_text(input_text)
 
-    with open(args.output, "w", encoding="utf-8") as f:
-        f.write(output_text)
+    try:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(output_text)
+    except OSError as e:
+        print(f"Error: could not write '{args.output}': {e}")
+        raise SystemExit(1)
 
     print(f"Processing complete! Output written to {args.output}")
+
+
+if __name__ == "__main__":
+    main()
