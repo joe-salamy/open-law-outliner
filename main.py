@@ -94,15 +94,21 @@ _CASED = [
 ]
 
 _DELETIONS = [
-    "the", "an",
+    "the", "a", "an",
     "it", "it's",
     "is", "are", "was", "were",
     "his", "hers", "their", "theirs",
     "case example:",
 ]
 
-# Lowercase-only deletions ("A" is kept so grades and labels survive).
-_EXACT_DELETIONS = ["a"]
+# "A" is deleted as an article like "the"/"an", except where it is a label:
+# a grade/answer letter ("answer A"), "vitamin A", "type A", and the like, or
+# a lone letter on its own line. Those are preserved verbatim.
+_GRADE_BEFORE = re.compile(
+    r"(?i)\b(answer|answers|choice|choices|option|options|letter|letters|"
+    r"grade|grades|question|questions|vitamin|type|types|plan|plans|"
+    r"part|parts|phase|phases|step|steps|stage|stages|group|groups)\s+$"
+)
 
 # Punctuation-free symbols: match anywhere (no word boundaries).
 _RAW = (("->", "→"), ("<-", "←"))
@@ -165,14 +171,28 @@ _parts += [(len(p), re.escape(p)) for p, _ in _RAW]
 _parts += [(len(p), r"(?<=\d)" + re.escape(p) + r"(?!\d)") for p, _ in _NUM]
 _parts.sort(key=lambda part: -part[0])
 _PATTERN = re.compile("|".join(alt for _, alt in _parts), re.IGNORECASE)
-_EXACT_PATTERN = re.compile("|".join(
-    r"(?<!\w)" + re.escape(p) + r"(?!\w)" for p in _EXACT_DELETIONS))
+
+# A lone capital "A" may be a grade or another label, not an article. The
+# single case-insensitive "a" entry above handles the lowercase article, and
+# _sub routes the uppercase form through _keep_cap_a: deleted unless it
+# follows a label word ("answer A") or stands alone on its line.
 
 del _phrase, _repl, _word_keys, _parts
 
 
+def _keep_cap_a(match):
+    start, end = match.start(), match.end()
+    line = match.string[:start].split("\n")[-1] + match.string[start:end] + match.string[end:].split("\n")[0]
+    if re.sub(r"[^A-Za-z]", "", line) == "A":
+        return match.group(0)
+    if _GRADE_BEFORE.search(match.string[:start].split("\n")[-1]):
+        return match.group(0)
+    return ""
+
 def _sub(match):
     text = match.group(0)
+    if text.lower() == "a" and text == "A":
+        return _keep_cap_a(match)
     repl, cased = _entries[text.lower()]
     if cased and text[0].isupper():
         return repl[0].upper() + repl[1:]
@@ -181,8 +201,7 @@ def _sub(match):
 
 def apply_replacements(text):
     """Apply all abbreviation replacements in a single pass."""
-    text = _PATTERN.sub(_sub, text)
-    return _EXACT_PATTERN.sub("", text)
+    return _PATTERN.sub(_sub, text)
 
 
 # Per-line cleanup ------------------------------------------------------------
@@ -191,13 +210,17 @@ _PERIOD_BEFORE_CLOSER = re.compile(r"\.(?=[\"'\)\]\}*_]+$)")
 
 
 def _capitalize_line(line):
-    """Uppercase the first letter, unless the line leads with a number."""
-    for i, ch in enumerate(line):
-        if ch.isalpha():
-            return line[:i] + ch.upper() + line[i + 1:]
-        if ch.isdigit():
-            return line
-    return line
+    """Uppercase the first letter, skipping formatting + list markers.
+
+    A numbered item ("1. d committed…", "(a) novelty…") capitalizes its first
+    word; only a line whose first real word starts with a digit ("1952 Act…",
+    "8A limits…") is left alone.
+    """
+    match = re.match(r"""\s*(?:[*_\"'(>\[]+)?(?:\(?[0-9]+[.)]\s+)?(?:[-–—+]\s+)?([A-Za-z])""", line)
+    if match is None:
+        return line
+    i = match.start(1)
+    return line[:i] + line[i].upper() + line[i + 1:]
 
 
 def _delete_period_line(line):

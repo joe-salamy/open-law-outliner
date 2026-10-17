@@ -12,7 +12,7 @@ Law school exams reward speed. This tool takes dense prose notes and shrinks the
 
 - `Plaintiff` → `P`, `Defendant` → `D`
 - `jurisdiction` → `jdx`, `Summary judgment` → `SJ`
-- `the`, `a`, `an`, `is`, `are`, `was` → _(deleted)_
+- `the`, `a`, `an`, `is`, `are`, `was` → _(deleted; a lone capital `A` survives only as a grade/label like `answer A`)_
 - `and` → `+`, `with` → `w/`, `because` → `bc`
 - `First Amendment` → `1A`, `Fourteenth Amendment` → `14A`
 - All 50 US state names → standard two-letter codes
