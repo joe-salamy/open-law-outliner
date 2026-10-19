@@ -101,9 +101,12 @@ _DELETIONS = [
     "case example:",
 ]
 
-# "A" is deleted as an article like "the"/"an", except where it is a label:
-# a grade/answer letter ("answer A"), "vitamin A", "type A", and the like, or
-# a lone letter on its own line. Those are preserved verbatim.
+# "A" is deleted as an article like "the"/"an" only where an article can
+# start a sentence: at the start of a line (after indent, list markers and
+# formatting) or after sentence punctuation (". A", ": A"). Anywhere else a
+# capital "A" is a label ("Inventor A", "shoots A", "identified only as A"),
+# as is a grade/answer letter ("answer A"), "vitamin A", "type A", and the
+# like, or a lone letter on its own line. Those are preserved verbatim.
 _GRADE_BEFORE = re.compile(
     r"(?i)\b(answer|answers|choice|choices|option|options|letter|letters|"
     r"grade|grades|question|questions|vitamin|type|types|plan|plans|"
@@ -180,17 +183,28 @@ _PATTERN = re.compile("|".join(alt for _, alt in _parts), re.IGNORECASE)
 del _phrase, _repl, _word_keys, _parts
 
 
+_LINE_START = re.compile(r"""^[\s*_"'(>\[\-–—+0-9.)]*(?:\(?[A-Za-z][.)]\s+)?[*_"'(\[]*$""")
+_AFTER_SENTENCE = re.compile(r"""[.!?:]["')\]*_]*\s+[*_"'(\[]*$""")
+
+
 def _keep_cap_a(match):
     start, end = match.start(), match.end()
-    line = match.string[:start].split("\n")[-1] + match.string[start:end] + match.string[end:].split("\n")[0]
+    before = match.string[:start].split("\n")[-1]
+    line = before + match.string[start:end] + match.string[end:].split("\n")[0]
     if re.sub(r"[^A-Za-z]", "", line) == "A":
         return match.group(0)
-    if _GRADE_BEFORE.search(match.string[:start].split("\n")[-1]):
+    if _GRADE_BEFORE.search(before):
         return match.group(0)
-    return ""
+    if _LINE_START.match(before) or _AFTER_SENTENCE.search(before):
+        return ""
+    return match.group(0)
+
 
 def _sub(match):
     text = match.group(0)
+    s, start, end = match.string, match.start(), match.end()
+    if text.lower() == "a" and s[start - 1:start] == "(" and s[end:end + 1] == ")":
+        return text  # "(a)" list marker, not an article
     if text.lower() == "a" and text == "A":
         return _keep_cap_a(match)
     repl, cased = _entries[text.lower()]
@@ -207,6 +221,8 @@ def apply_replacements(text):
 # Per-line cleanup ------------------------------------------------------------
 _SPACES = re.compile(r"[ \t]{2,}")
 _PERIOD_BEFORE_CLOSER = re.compile(r"\.(?=[\"'\)\]\}*_]+$)")
+# Bold markers left empty by a deleted word ("**The** x" -> "**** x").
+_EMPTY_BOLD = re.compile(r"(?<!\*)\*\*\*\*(?!\*)")
 
 
 def _capitalize_line(line):
@@ -216,7 +232,7 @@ def _capitalize_line(line):
     word; only a line whose first real word starts with a digit ("1952 Act…",
     "8A limits…") is left alone.
     """
-    match = re.match(r"""\s*(?:[*_\"'(>\[]+)?(?:\(?[0-9]+[.)]\s+)?(?:[-–—+]\s+)?([A-Za-z])""", line)
+    match = re.match(r"""\s*(?:[*_\"'(>\[]+)?(?:\(?(?:[0-9]+|[a-z])[.)]\s+)?(?:[-–—+]\s+)?(?:\(?[a-z][.)]\s+)?(?:[*_\"'(\[]+)?([A-Za-z])""", line)
     if match is None:
         return line
     i = match.start(1)
@@ -240,7 +256,7 @@ def _format_line(line):
     if indent == " ":
         # Single leading space is deletion residue, not indentation.
         indent = ""
-    body = _SPACES.sub(" ", line[len(indent):].strip())
+    body = _SPACES.sub(" ", _EMPTY_BOLD.sub("", line[len(indent):]).strip())
     body = _delete_backslash_line(_delete_period_line(_capitalize_line(body)))
     return indent + body
 
